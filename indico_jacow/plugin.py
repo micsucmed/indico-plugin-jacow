@@ -27,6 +27,7 @@ from indico.modules.events.models.persons import EventPerson
 from indico.modules.events.papers.views import WPManagePapers
 from indico.modules.events.persons.forms import ManagePersonListsForm
 from indico.modules.events.persons.schemas import PersonLinkSchema
+from indico.modules.users.views import WPUser
 from indico.modules.events.registration.schemas import CheckinRegistrationSchema
 from indico.modules.events.timetable.views import WPManageTimetable
 from indico.modules.logs.controllers import RHUserLogs, RHUserLogsJSON
@@ -35,6 +36,7 @@ from indico.util.i18n import _
 from indico.web.flask.util import url_for
 from indico.web.forms.base import IndicoForm
 from indico.web.forms.fields import PrincipalListField
+from indico.web.forms.fields import IndicoPasswordField
 from indico.web.forms.widgets import SwitchWidget
 from indico.web.menu import SideMenuItem, TopMenuItem
 
@@ -63,6 +65,7 @@ class SettingsForm(IndicoForm):
     repo_managers = PrincipalListField(_('Central Repo Managers'), allow_groups=True,
                                        description=_('List of users who can manage Indico user profiles without being '
                                                      'full Indico admins'))
+    brevo_api_key = IndicoPasswordField(_('Brevo API key'), toggle=True)
 
 
 class JACOWPlugin(IndicoPlugin):
@@ -75,6 +78,7 @@ class JACOWPlugin(IndicoPlugin):
     settings_form = SettingsForm
     default_settings = {
         'sync_enabled': False,
+        'brevo_api_key': '',
     }
     acl_settings = {
         'repo_managers',
@@ -107,10 +111,11 @@ class JACOWPlugin(IndicoPlugin):
             self.connect(signals.rh.before_check_access, self._before_check_access_repo_mgr, sender=rh_cls)
         self.connect(signals.plugin.schema_pre_load, self._person_link_schema_pre_load, sender=PersonLinkSchema)
         self.connect(signals.plugin.schema_post_dump, self._person_link_schema_post_dump, sender=PersonLinkSchema)
+        self.connect(signals.menu.items, self._extend_user_profile_menu, sender='user-profile-sidemenu')
         self.connect(signals.plugin.schema_post_dump, self._checkin_registration_schema_post_dump,
                      sender=CheckinRegistrationSchema)
         wps = (WPContributions, WPDisplayAbstracts, WPManageAbstracts, WPManageContributions,
-               WPMyContributions, WPManagePapers, WPManageTimetable)
+               WPMyContributions, WPManagePapers, WPManageTimetable, WPUser)
         self.inject_bundle('main.js', wps)
         self.inject_bundle('main.css', wps)
 
@@ -284,6 +289,10 @@ class JACOWPlugin(IndicoPlugin):
     def _before_check_access_repo_mgr(self, sender, rh, **kwargs):
         if session.user and self.settings.acls.contains_user('repo_managers', session.user):
             return True
+
+    def _extend_user_profile_menu(self, sender, user, **kwargs):
+        return SideMenuItem('mailing_lists', _('Mailing Lists'),
+                           url_for_plugin('jacow.mailing_lists', user), 65, disabled=user.is_system)
 
     def _person_link_schema_pre_load(self, sender, data, **kwargs):
         if 'jacow_affiliations_ids' not in data:
