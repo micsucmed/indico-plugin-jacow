@@ -27,11 +27,11 @@ from indico.modules.events.models.persons import EventPerson
 from indico.modules.events.papers.views import WPManagePapers
 from indico.modules.events.persons.forms import ManagePersonListsForm
 from indico.modules.events.persons.schemas import PersonLinkSchema
-from indico.modules.users.views import WPUser
 from indico.modules.events.registration.schemas import CheckinRegistrationSchema
 from indico.modules.events.timetable.views import WPManageTimetable
 from indico.modules.logs.controllers import RHUserLogs, RHUserLogsJSON
 from indico.modules.users import controllers as users_controllers
+from indico.modules.users.views import WPUser
 from indico.util.i18n import _
 from indico.web.flask.util import url_for
 from indico.web.forms.base import IndicoForm
