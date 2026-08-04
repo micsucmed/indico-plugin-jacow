@@ -59,6 +59,12 @@ REPO_MANAGER_RHS = (
 
 
 class SettingsForm(IndicoForm):
+    _fieldsets = [
+        (_('General'), ('sync_enabled', 'brevo_api_key')),
+        (_('User profile management'), ('repo_managers',)),
+        (_('Mailing lists'), ('stakeholder_mailing_list_access',)),
+    ]
+
     sync_enabled = BooleanField(_('Sync profiles'), widget=SwitchWidget(),
                                 description=_('Periodically sync user details with the central database'))
     repo_managers = PrincipalListField(_('Central Repo Managers'), allow_groups=True,
@@ -79,14 +85,12 @@ class JACOWPlugin(IndicoPlugin):
     configurable = True
     settings_form = SettingsForm
     acl_settings = {
+        'repo_managers',
         'stakeholder_mailing_list_access',
     }
     default_settings = {
         'sync_enabled': False,
         'brevo_api_key': '',
-    }
-    acl_settings = {
-        'repo_managers',
     }
     default_event_settings = {
         'multiple_affiliations': False,

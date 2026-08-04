@@ -5,7 +5,6 @@
 // them and/or modify them under the terms of the MIT License; see
 // the LICENSE file for more details.
 
-// import getMailingListsURL from 'indico-url:plugin_jacow.mailing_lists';
 import mailingListSubscribeURL from 'indico-url:plugin_jacow.user_mailing_lists_subscribe';
 import mailingListUnsubscribeURL from 'indico-url:plugin_jacow.user_mailing_lists_unsubscribe';
 
