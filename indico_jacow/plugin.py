@@ -84,13 +84,13 @@ class JACOWPlugin(IndicoPlugin):
 
     configurable = True
     settings_form = SettingsForm
-    acl_settings = {
-        'repo_managers',
-        'stakeholder_mailing_list_access',
-    }
     default_settings = {
         'sync_enabled': False,
         'brevo_api_key': '',
+    }
+    acl_settings = {
+        'repo_managers',
+        'stakeholder_mailing_list_access',
     }
     default_event_settings = {
         'multiple_affiliations': False,
