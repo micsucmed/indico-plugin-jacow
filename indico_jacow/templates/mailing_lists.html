@@ -1,6 +1,14 @@
 {% extends 'users/base.html' %}
 
 {% block user_content %}
+    {% if session.user.is_admin and user != session.user %}
+        {% call message_box('warning') %}
+            {% trans %}
+                You are editing another user as an admin. Changes to mailing list subscriptions will be applied to this
+                user's email addresses. Make sure any changes are intentional and appropriate for the user.
+            {% endtrans %}
+        {% endcall %}
+    {% endif %}
     <div id="mailing-lists"></div>
     <script>
         setupMailingList(document.querySelector('#mailing-lists'), {{ mailing_lists | tojson }});

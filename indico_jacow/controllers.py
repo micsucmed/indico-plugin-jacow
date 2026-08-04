@@ -51,6 +51,19 @@ from indico.web.rh import RH, RHProtected
 from indico_jacow.views import WPAbstractsStats, WPDisplayAbstractsStatistics, WPUserMailingLists
 
 
+DEFAULT_MAILING_LIST_GROUP_KEY = 'regular'
+DEFAULT_MAILING_LIST_GROUP = {
+    'title': _('Mailing Lists'),
+}
+MAILING_LIST_CATEGORIES = {
+    'stakeholder': {
+        'title': _('Stakeholder Mailing Lists'),
+        'prefix': 'Stakeholders_',
+        'acl_setting': 'stakeholder_mailing_list_access',
+    },
+}
+
+
 def _get_boolean_questions(event):
     return [question
             for question in event.abstract_review_questions
@@ -349,6 +362,57 @@ class BrevoAPIMixin:
         except ApiException as e:
             raise IndicoError(f'Exception when retrieving Mailing List from Brevo: {e.reason}')
 
+    def get_mailing_list_category(self, mailing_list):
+        for key, category in MAILING_LIST_CATEGORIES.items():
+            if mailing_list.get('name', '').startswith(category['prefix']):
+                return key, category
+        return None, None
+
+    def can_access_mailing_list_category(self, category):
+        acl_setting = category.get('acl_setting')
+        if not acl_setting:
+            return True
+        user = session.user
+        return bool(user and (user.is_admin or current_plugin.settings.acls.contains_user(acl_setting, user)))
+
+    def check_mailing_list_access(self, mailing_list):
+        category = self.get_mailing_list_category(mailing_list)[1]
+        if category and not self.can_access_mailing_list_category(category):
+            raise Forbidden
+
+    def get_accessible_list(self, list_id):
+        mailing_list = self.get_list(list_id)
+        self.check_mailing_list_access(mailing_list)
+        return mailing_list
+
+    def group_mailing_lists(self, mailing_lists):
+        groups = {
+            DEFAULT_MAILING_LIST_GROUP_KEY: {
+                'title': str(DEFAULT_MAILING_LIST_GROUP['title']),
+                'lists': [],
+            },
+        }
+        category_access = {}
+
+        for mailing_list in mailing_lists.get('lists', []):
+            category_key, category = self.get_mailing_list_category(mailing_list)
+            if category:
+                if category_key not in category_access:
+                    category_access[category_key] = self.can_access_mailing_list_category(category)
+                if not category_access[category_key]:
+                    continue
+                group = groups.setdefault(category_key, {
+                    'title': str(category['title']),
+                    'lists': [],
+                })
+            else:
+                group = groups[DEFAULT_MAILING_LIST_GROUP_KEY]
+
+            group['lists'].append(mailing_list)
+
+        list_groups = [{'key': key, **group} for key, group in groups.items() if group['lists']]
+        return {'list_groups': list_groups}
+
 
 class RHMailingLists(BrevoAPIMixin, RHUserBase):
     def _process(self):
@@ -364,6 +428,8 @@ class RHMailingLists(BrevoAPIMixin, RHUserBase):
         for lst in lists.get('lists', []):
             lst['subscribed'] = lst['id'] in valid_contact_ids
 
+        lists = self.group_mailing_lists(lists)
+        lists['user_id'] = request.view_args.get('user_id')
         mailing_lists = json.dumps(lists)
         return WPUserMailingLists.render_template('mailing_lists.html', 'mailing_lists', user=self.user,
                                                   mailing_lists=mailing_lists)
@@ -381,6 +447,7 @@ class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
     })
     def _process(self, list_id):
         email = self.user.email
+        mailing_list = self.get_accessible_list(list_id)
         try:
             if self.get_contact_info(email):
                 response = self.add_contact_to_lists(list_id, email)
@@ -392,9 +459,9 @@ class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
                     list_ids=[list_id],
                     )
             self.user.log(UserLogRealm.user, LogKind.positive, 'Mailing Lists',
-                            f'Subscribed to list: {self.get_list(list_id)['name']}',
-                            session.user, data={'IP': request.remote_addr},
-                            meta={'list_id': list_id})
+                          f'Subscribed to list: {mailing_list["name"]}',
+                          session.user, data={'IP': request.remote_addr},
+                          meta={'list_id': list_id})
             return response
         except ApiException as e:
             raise IndicoError(f'Failed to subscribe to the list and/or create contact: {e.reason}')
@@ -410,14 +477,15 @@ class RHMailingListUnsubscribe(BrevoAPIMixin, RHUserBase):
         'list_id': fields.Int(required=True, validate=not_empty),
     })
     def _process(self, list_id):
+        mailing_list = self.get_accessible_list(list_id)
         contact_emails = brevo_python.RemoveContactFromList(emails=list(self.user.all_emails))
 
         try:
             response = self.api_instance.remove_contact_from_list(list_id, contact_emails)
             self.user.log(UserLogRealm.user, LogKind.positive, 'Mailing Lists',
-                            f'Unsubscribed from list: {self.get_list(list_id)['name']}',
-                            session.user, data={'IP': request.remote_addr},
-                            meta={'list_id': list_id})
+                          f'Unsubscribed from list: {mailing_list["name"]}',
+                          session.user, data={'IP': request.remote_addr},
+                          meta={'list_id': list_id})
             return response.to_dict()
         except Exception as e:
             raise IndicoError(f'Could not unsubscribe from the list: {e.reason}')

@@ -5,9 +5,12 @@
 # them and/or modify them under the terms of the MIT License; see
 # the LICENSE file for more details.
 
+from types import SimpleNamespace
+
 import pytest
 from flask import g
 from marshmallow import EXCLUDE
+from werkzeug.exceptions import Forbidden
 
 from indico.modules.events.abstracts.lists import AbstractListGeneratorManagement
 from indico.modules.events.abstracts.models.abstracts import Abstract
@@ -69,6 +72,90 @@ def test_person_link_schema_post_dump_omits_core_affiliation_for_jacow_affiliati
         assert 'affiliation_id' not in data[0]
         assert 'affiliation_meta' not in data[0]
         assert data[0]['jacow_affiliations_ids'] == [affiliation.id]
+
+
+def _mock_session_user(mocker, user):
+    mocker.patch('indico_jacow.controllers.session', SimpleNamespace(user=user))
+
+
+def _mock_stakeholder_acl(mocker, allowed):
+    contains_user = mocker.Mock(return_value=allowed)
+    mocker.patch('indico_jacow.controllers.current_plugin',
+                 SimpleNamespace(settings=SimpleNamespace(acls=SimpleNamespace(contains_user=contains_user))))
+
+
+def _make_user(admin=False):
+    return SimpleNamespace(is_admin=admin)
+
+
+@pytest.mark.parametrize(('acl_allowed', 'expected'), (
+    (False, {
+        'list_groups': [
+            {
+                'key': 'regular',
+                'title': 'Mailing Lists',
+                'lists': [
+                    {'id': 1, 'name': 'Users'},
+                    {'id': 3, 'name': 'Announcements'},
+                ],
+            },
+        ],
+    }),
+    (True, {
+        'list_groups': [
+            {
+                'key': 'regular',
+                'title': 'Mailing Lists',
+                'lists': [
+                    {'id': 1, 'name': 'Users'},
+                    {'id': 3, 'name': 'Announcements'},
+                ],
+            },
+            {
+                'key': 'stakeholder',
+                'title': 'Stakeholder Mailing Lists',
+                'lists': [
+                    {'id': 2, 'name': 'Stakeholders_Board'},
+                ],
+            },
+        ],
+    }),
+))
+def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
+    from indico_jacow.controllers import BrevoAPIMixin
+
+    user = _make_user()
+    _mock_session_user(mocker, user)
+    _mock_stakeholder_acl(mocker, acl_allowed)
+    mailing_lists = {
+        'count': 3,
+        'lists': [
+            {'id': 1, 'name': 'Users'},
+            {'id': 2, 'name': 'Stakeholders_Board'},
+            {'id': 3, 'name': 'Announcements'},
+        ],
+    }
+
+    assert BrevoAPIMixin().group_mailing_lists(mailing_lists) == expected
+
+
+@pytest.mark.parametrize(('list_name', 'admin', 'acl_allowed', 'allowed'), (
+    ('Stakeholders_Board', False, False, False),
+    ('Stakeholders_Board', False, True, True),
+    ('Stakeholders_Board', True, False, True),
+    ('Announcements', False, False, True),
+))
+def test_mailing_list_access_checks_stakeholder_acl(mocker, list_name, admin, acl_allowed, allowed):
+    from indico_jacow.controllers import BrevoAPIMixin
+
+    _mock_session_user(mocker, _make_user(admin=admin))
+    _mock_stakeholder_acl(mocker, acl_allowed)
+
+    if allowed:
+        BrevoAPIMixin().check_mailing_list_access({'id': 2, 'name': list_name})
+    else:
+        with pytest.raises(Forbidden):
+            BrevoAPIMixin().check_mailing_list_access({'id': 2, 'name': list_name})
 
 
 @pytest.mark.parametrize(('reviews', 'expected'), (

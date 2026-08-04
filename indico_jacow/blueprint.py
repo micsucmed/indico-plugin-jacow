@@ -5,6 +5,8 @@
 # them and/or modify them under the terms of the MIT License; see
 # the LICENSE file for more details.
 
+from flask import has_request_context, request
+
 from indico.core.plugins import IndicoPluginBlueprint
 
 from indico_jacow.controllers import (RHAbstractsExportCSV, RHAbstractsExportExcel, RHAbstractsStats,
@@ -39,8 +41,15 @@ blueprint.add_url_rule('!/api/jacow/affiliation', 'create_affiliation', RHCreate
 
 
 # Mailing preferences
-blueprint.add_url_rule('!/users/emails/mailing-lists', 'mailing_lists', RHMailingLists)
-blueprint.add_url_rule('!/users/emails/mailing-lists/subscribe', 'mailing_lists_subscribe',
-                       RHMailingListSubscribe, methods=('POST',))
-blueprint.add_url_rule('!/users/emails/mailing-lists/unsubscribe', 'mailing_lists_unsubscribe',
-                       RHMailingListUnsubscribe, methods=('POST',))
+with blueprint.add_prefixed_rules('!/user/<int:user_id>', '!/user'):
+    blueprint.add_url_rule('/emails/mailing-lists', 'user_mailing_lists', RHMailingLists)
+    blueprint.add_url_rule('/emails/mailing-lists/subscribe', 'user_mailing_lists_subscribe',
+                           RHMailingListSubscribe, methods=('POST',))
+    blueprint.add_url_rule('/emails/mailing-lists/unsubscribe', 'user_mailing_lists_unsubscribe',
+                           RHMailingListUnsubscribe, methods=('POST',))
+
+
+@blueprint.url_defaults
+def _add_user_id(endpoint, values):
+    if endpoint.startswith('plugin_jacow.user_mailing_lists') and 'user_id' not in values and has_request_context():
+        values['user_id'] = request.view_args.get('user_id')
