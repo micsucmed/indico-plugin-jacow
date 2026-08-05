@@ -89,37 +89,33 @@ def _make_user(admin=False):
 
 
 @pytest.mark.parametrize(('acl_allowed', 'expected'), (
-    (False, {
-        'list_groups': [
-            {
-                'key': 'regular',
-                'title': 'Mailing Lists',
-                'lists': [
-                    {'id': 1, 'name': 'Users'},
-                    {'id': 3, 'name': 'Announcements'},
-                ],
-            },
-        ],
-    }),
-    (True, {
-        'list_groups': [
-            {
-                'key': 'regular',
-                'title': 'Mailing Lists',
-                'lists': [
-                    {'id': 1, 'name': 'Users'},
-                    {'id': 3, 'name': 'Announcements'},
-                ],
-            },
-            {
-                'key': 'stakeholder',
-                'title': 'Stakeholder Mailing Lists',
-                'lists': [
-                    {'id': 2, 'name': 'Stakeholders_Board'},
-                ],
-            },
-        ],
-    }),
+    (False, [
+        {
+            'key': 'regular',
+            'title': 'Mailing Lists',
+            'lists': [
+                {'id': 1, 'name': 'Users', 'subscribed': False},
+                {'id': 3, 'name': 'Announcements', 'subscribed': False},
+            ],
+        },
+    ]),
+    (True, [
+        {
+            'key': 'regular',
+            'title': 'Mailing Lists',
+            'lists': [
+                {'id': 1, 'name': 'Users', 'subscribed': False},
+                {'id': 3, 'name': 'Announcements', 'subscribed': False},
+            ],
+        },
+        {
+            'key': 'stakeholder',
+            'title': 'Stakeholder Mailing Lists',
+            'lists': [
+                {'id': 2, 'name': 'Stakeholders_Board', 'subscribed': False},
+            ],
+        },
+    ]),
 ))
 def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
     from indico_jacow.controllers import BrevoAPIMixin
@@ -127,22 +123,19 @@ def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
     user = _make_user()
     _mock_session_user(mocker, user)
     _mock_stakeholder_acl(mocker, acl_allowed)
-    mailing_lists = {
-        'count': 3,
-        'lists': [
-            {'id': 1, 'name': 'Users'},
-            {'id': 2, 'name': 'Stakeholders_Board'},
-            {'id': 3, 'name': 'Announcements'},
-        ],
-    }
+    mailing_lists = [
+        SimpleNamespace(id=1, name='Users'),
+        SimpleNamespace(id=2, name='Stakeholders_Board'),
+        SimpleNamespace(id=3, name='Announcements'),
+    ]
 
-    assert BrevoAPIMixin().group_mailing_lists(mailing_lists) == expected
+    assert BrevoAPIMixin().group_mailing_lists(mailing_lists, set()) == expected
 
 
 @pytest.mark.parametrize(('list_name', 'admin', 'acl_allowed', 'allowed'), (
     ('Stakeholders_Board', False, False, False),
     ('Stakeholders_Board', False, True, True),
-    ('Stakeholders_Board', True, False, True),
+    ('Stakeholders_Board', True, False, False),
     ('Announcements', False, False, True),
 ))
 def test_mailing_list_access_checks_stakeholder_acl(mocker, list_name, admin, acl_allowed, allowed):
@@ -152,10 +145,10 @@ def test_mailing_list_access_checks_stakeholder_acl(mocker, list_name, admin, ac
     _mock_stakeholder_acl(mocker, acl_allowed)
 
     if allowed:
-        BrevoAPIMixin().check_mailing_list_access({'id': 2, 'name': list_name})
+        BrevoAPIMixin().check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
     else:
         with pytest.raises(Forbidden):
-            BrevoAPIMixin().check_mailing_list_access({'id': 2, 'name': list_name})
+            BrevoAPIMixin().check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
 
 
 @pytest.mark.parametrize(('reviews', 'expected'), (
