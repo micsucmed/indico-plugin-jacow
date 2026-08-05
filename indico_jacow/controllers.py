@@ -7,12 +7,11 @@
 
 import csv
 import io
-import json
 from collections import defaultdict
 from statistics import mean, pstdev
 
-import brevo_python
-from brevo_python.rest import ApiException
+from brevo import AddContactToListRequestBodyEmails, Brevo, NotFoundError, RemoveContactFromListRequestBodyEmails
+from brevo.core import ApiError
 from flask import jsonify, request, session
 from flask_pluginengine import current_plugin
 from marshmallow import fields
@@ -332,48 +331,42 @@ class RHCreateAffiliation(RHProtected):
 
 class BrevoAPIMixin:
     @cached_property
-    def api_instance(self):
-        if not hasattr(self, '_api_instance'):
-            from indico_jacow.plugin import JACOWPlugin
-            configuration_brevo = brevo_python.Configuration()
-            configuration_brevo.api_key['api-key'] = JACOWPlugin.settings.get('brevo_api_key')
-            self._api_instance = brevo_python.ContactsApi(brevo_python.ApiClient(configuration_brevo))
-        return self._api_instance
+    def brevo_client(self):
+        return Brevo(api_key=current_plugin.settings.get('brevo_api_key'))
 
     def get_contact_info(self, email):
         try:
-            return self.api_instance.get_contact_info(email).to_dict()
-        except ApiException as e:
-            if e.status == 404:
-                return None
-            raise
+            return self.brevo_client.contacts.get_contact_info(email)
+        except NotFoundError:
+            return None
+        except ApiError:
+            raise IndicoError('Could not get contact info')
 
     def create_contact(self, email, first_name, last_name, list_ids):
-        contact = brevo_python.CreateContact(
+        self.brevo_client.contacts.create_contact(
             email=email,
             attributes={'FIRSTNAME': first_name, 'LASTNAME': last_name},
-            list_ids=list_ids
+            list_ids=list_ids,
         )
-        return self.api_instance.create_contact(contact).to_dict()
 
     def get_list(self, list_id):
         try:
-            return self.api_instance.get_list(list_id).to_dict()
-        except ApiException as e:
-            raise IndicoError(f'Exception when retrieving Mailing List from Brevo: {e.reason}')
+            return self.brevo_client.contacts.get_list(list_id)
+        except ApiError:
+            raise IndicoError('Could not get mailing list')
 
     def get_mailing_list_category(self, mailing_list):
         for key, category in MAILING_LIST_CATEGORIES.items():
-            if mailing_list.get('name', '').startswith(category['prefix']):
+            if mailing_list.name.startswith(category['prefix']):
                 return key, category
         return None, None
 
     def can_access_mailing_list_category(self, category):
-        acl_setting = category.get('acl_setting')
-        if not acl_setting:
+        if not (acl_setting := category.get('acl_setting')):
             return True
-        user = session.user
-        return bool(user and (user.is_admin or current_plugin.settings.acls.contains_user(acl_setting, user)))
+        if not session.user:
+            return False
+        return current_plugin.settings.acls.contains_user(acl_setting, session.user)
 
     def check_mailing_list_access(self, mailing_list):
         category = self.get_mailing_list_category(mailing_list)[1]
@@ -385,7 +378,7 @@ class BrevoAPIMixin:
         self.check_mailing_list_access(mailing_list)
         return mailing_list
 
-    def group_mailing_lists(self, mailing_lists):
+    def group_mailing_lists(self, mailing_lists, subscribed_list_ids):
         groups = {
             DEFAULT_MAILING_LIST_GROUP_KEY: {
                 'title': str(DEFAULT_MAILING_LIST_GROUP['title']),
@@ -394,7 +387,7 @@ class BrevoAPIMixin:
         }
         category_access = {}
 
-        for mailing_list in mailing_lists.get('lists', []):
+        for mailing_list in mailing_lists:
             category_key, category = self.get_mailing_list_category(mailing_list)
             if category:
                 if category_key not in category_access:
@@ -408,37 +401,34 @@ class BrevoAPIMixin:
             else:
                 group = groups[DEFAULT_MAILING_LIST_GROUP_KEY]
 
-            group['lists'].append(mailing_list)
+            group['lists'].append({
+                'id': mailing_list.id,
+                'name': mailing_list.name,
+                'subscribed': mailing_list.id in subscribed_list_ids,
+            })
 
-        list_groups = [{'key': key, **group} for key, group in groups.items() if group['lists']]
-        return {'list_groups': list_groups}
+        return [{'key': key, **group} for key, group in groups.items() if group['lists']]
 
 
 class RHMailingLists(BrevoAPIMixin, RHUserBase):
     def _process(self):
-        valid_contact_ids = set()
+        subscribed_list_ids = set()
         emails = self.user.all_emails
         lists = self.get_all_lists()
 
         for email in emails:
-            if (contact_info := self.get_contact_info(email)):
-                if 'list_ids' in contact_info:
-                    valid_contact_ids.update(contact_info['list_ids'])
+            if contact_info := self.get_contact_info(email):
+                subscribed_list_ids.update(contact_info.list_ids)
 
-        for lst in lists.get('lists', []):
-            lst['subscribed'] = lst['id'] in valid_contact_ids
-
-        lists = self.group_mailing_lists(lists)
-        lists['user_id'] = request.view_args.get('user_id')
-        mailing_lists = json.dumps(lists)
+        grouped_lists = self.group_mailing_lists(lists, subscribed_list_ids)
         return WPUserMailingLists.render_template('mailing_lists.html', 'mailing_lists', user=self.user,
-                                                  mailing_lists=mailing_lists)
+                                                  mailing_lists=grouped_lists, user_id=request.view_args.get('user_id'))
 
     def get_all_lists(self):
         try:
-            return self.api_instance.get_lists().to_dict()
-        except ApiException as e:
-            raise IndicoError(f'Exception when retrieving Mailing Lists from Brevo: {e.reason}')
+            return self.brevo_client.contacts.get_lists().lists
+        except ApiError:
+            raise IndicoError('Could not get mailing lists')
 
 
 class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
@@ -450,26 +440,24 @@ class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
         mailing_list = self.get_accessible_list(list_id)
         try:
             if self.get_contact_info(email):
-                response = self.add_contact_to_lists(list_id, email)
+                self.add_contact_to_lists(list_id, email)
             else:
-                response = self.create_contact(
+                self.create_contact(
                     email=email,
                     first_name=self.user.first_name,
                     last_name=self.user.last_name,
                     list_ids=[list_id],
-                    )
+                )
             self.user.log(UserLogRealm.user, LogKind.positive, 'Mailing Lists',
-                          f'Subscribed to list: {mailing_list["name"]}',
-                          session.user, data={'IP': request.remote_addr},
-                          meta={'list_id': list_id})
-            return response
-        except ApiException as e:
-            raise IndicoError(f'Failed to subscribe to the list and/or create contact: {e.reason}')
+                          f'Subscribed to list: {mailing_list.name}',
+                          session.user, meta={'list_id': list_id})
+            return '', 204
+        except ApiError:
+            raise IndicoError('Could not subscribe to mailing list')
 
     def add_contact_to_lists(self, list_id, contact_email):
-        contact_email = brevo_python.AddContactToList(emails=[contact_email])
-        response = self.api_instance.add_contact_to_list(list_id, contact_email)
-        return response.to_dict()
+        payload = AddContactToListRequestBodyEmails(emails=[contact_email])
+        return self.brevo_client.contacts.add_contact_to_list(list_id, request=payload)
 
 
 class RHMailingListUnsubscribe(BrevoAPIMixin, RHUserBase):
@@ -478,14 +466,12 @@ class RHMailingListUnsubscribe(BrevoAPIMixin, RHUserBase):
     })
     def _process(self, list_id):
         mailing_list = self.get_accessible_list(list_id)
-        contact_emails = brevo_python.RemoveContactFromList(emails=list(self.user.all_emails))
-
+        payload = RemoveContactFromListRequestBodyEmails(emails=list(self.user.all_emails))
         try:
-            response = self.api_instance.remove_contact_from_list(list_id, contact_emails)
-            self.user.log(UserLogRealm.user, LogKind.positive, 'Mailing Lists',
-                          f'Unsubscribed from list: {mailing_list["name"]}',
-                          session.user, data={'IP': request.remote_addr},
-                          meta={'list_id': list_id})
-            return response.to_dict()
-        except Exception as e:
-            raise IndicoError(f'Could not unsubscribe from the list: {e.reason}')
+            self.brevo_client.contacts.remove_contact_from_list(list_id, request=payload)
+            self.user.log(UserLogRealm.user, LogKind.negative, 'Mailing Lists',
+                          f'Unsubscribed from list: {mailing_list.name}',
+                          session.user, meta={'list_id': list_id})
+            return '', 204
+        except ApiError:
+            raise IndicoError('Could not unsubscribe from mailing list')

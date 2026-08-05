@@ -17,12 +17,12 @@ import {indicoAxios, handleAxiosError} from 'indico/utils/axios';
 
 import './MailingList.module.scss';
 
-export function MailingList({mailingLists}) {
-  const [listGroups, setListGroups] = useState(mailingLists.list_groups);
+export function MailingList({mailingLists, userId}) {
+  const [listGroups, setListGroups] = useState(mailingLists);
   const [listsLoadingRequests, setListsLoadingRequests] = useState(new Set());
 
   const lists = listGroups.flatMap(group => group.lists);
-  const userIdArgs = mailingLists.user_id !== null ? {user_id: mailingLists.user_id} : {};
+  const userIdArgs = userId !== null ? {user_id: userId} : {};
 
   const subscribeList = async list => {
     await indicoAxios.post(mailingListSubscribeURL(userIdArgs), list);
@@ -106,25 +106,33 @@ export function MailingList({mailingLists}) {
 }
 
 MailingList.propTypes = {
-  mailingLists: PropTypes.shape({
-    list_groups: PropTypes.arrayOf(
-      PropTypes.shape({
-        key: PropTypes.string.isRequired,
-        title: PropTypes.string.isRequired,
-        lists: PropTypes.arrayOf(
-          PropTypes.shape({
-            id: PropTypes.number.isRequired,
-            name: PropTypes.string.isRequired,
-            subscribed: PropTypes.bool.isRequired,
-          })
-        ).isRequired,
-      })
-    ).isRequired,
-    user_id: PropTypes.number,
-  }).isRequired,
+  mailingLists: PropTypes.arrayOf(
+    PropTypes.shape({
+      key: PropTypes.string.isRequired,
+      title: PropTypes.string.isRequired,
+      lists: PropTypes.arrayOf(
+        PropTypes.shape({
+          id: PropTypes.number.isRequired,
+          name: PropTypes.string.isRequired,
+          subscribed: PropTypes.bool.isRequired,
+        })
+      ).isRequired,
+    })
+  ).isRequired,
+  userId: PropTypes.number,
 };
 
-window.setupMailingList = (elem, subMailingLists) => {
-  subMailingLists = JSON.parse(subMailingLists);
-  ReactDOM.render(<MailingList mailingLists={subMailingLists} />, elem);
-};
+customElements.define(
+  'ind-jacow-mailing-lists',
+  class extends HTMLElement {
+    connectedCallback() {
+      const userId = JSON.parse(this.getAttribute('user-id'));
+      const lists = JSON.parse(this.getAttribute('lists'));
+
+      ReactDOM.render(
+        <MailingList mailingLists={lists} userId={userId} />,
+        this
+      );
+    }
+  }
+);

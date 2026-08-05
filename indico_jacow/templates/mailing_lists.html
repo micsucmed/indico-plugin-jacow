@@ -9,8 +9,8 @@
             {% endtrans %}
         {% endcall %}
     {% endif %}
-    <div id="mailing-lists"></div>
-    <script>
-        setupMailingList(document.querySelector('#mailing-lists'), {{ mailing_lists | tojson }});
-    </script>
+    <ind-jacow-mailing-lists
+        user-id="{{ user_id | tojson | forceescape }}"
+        lists="{{ mailing_lists | tojson | forceescape }}">
+    </ind-jacow-mailing-lists>
 {% endblock %}

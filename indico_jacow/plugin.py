@@ -72,8 +72,8 @@ class SettingsForm(IndicoForm):
                                                      'full Indico admins'))
     brevo_api_key = IndicoPasswordField(_('Brevo API key'), toggle=True)
     stakeholder_mailing_list_access = PrincipalListField(_('Stakeholder mailing list access'), allow_groups=True,
-                                                        description=_('Users/groups allowed to see and manage '
-                                                                      'stakeholder mailing list subscriptions'))
+                                                         description=_('Users/groups allowed to see and manage '
+                                                                       'stakeholder mailing list subscriptions'))
 
 
 class JACOWPlugin(IndicoPlugin):
