@@ -10,7 +10,8 @@ import io
 from collections import defaultdict
 from statistics import mean, pstdev
 
-from brevo import AddContactToListRequestBodyEmails, Brevo, NotFoundError, RemoveContactFromListRequestBodyEmails
+from brevo import (AddContactToListRequestBodyEmails, Brevo, GetFolder, GetListResponse, GetListsResponseListsItem,
+                   NotFoundError, RemoveContactFromListRequestBodyEmails)
 from brevo.core import ApiError
 from flask import jsonify, request, session
 from flask_pluginengine import current_plugin
@@ -50,16 +51,9 @@ from indico.web.rh import RH, RHProtected
 from indico_jacow.views import WPAbstractsStats, WPDisplayAbstractsStatistics, WPUserMailingLists
 
 
-DEFAULT_MAILING_LIST_GROUP_KEY = 'regular'
-DEFAULT_MAILING_LIST_GROUP = {
-    'title': _('Mailing Lists'),
-}
-MAILING_LIST_CATEGORIES = {
-    'stakeholder': {
-        'title': _('Stakeholder Mailing Lists'),
-        'prefix': 'Stakeholders_',
-        'acl_setting': 'stakeholder_mailing_list_access',
-    },
+RESTRICTED_FOLDER_PREFIX = 'RESTRICTED-'
+RESTRICTED_FOLDER_ACL_MAP = {
+    'Stakeholders Lists': 'stakeholder_mailing_list_access',
 }
 
 
@@ -355,20 +349,25 @@ class BrevoAPIMixin:
         except ApiError:
             raise IndicoError('Could not get mailing list')
 
-    def get_mailing_list_category(self, mailing_list):
-        for key, category in MAILING_LIST_CATEGORIES.items():
-            if mailing_list.name.startswith(category['prefix']):
-                return key, category
-        return None, None
+    def get_folder(self, folder_id):
+        try:
+            return self.brevo_client.contacts.get_folder(folder_id)
+        except ApiError:
+            raise IndicoError('Could not get mailing list folder')
 
-    def can_access_mailing_list_category(self, category):
-        if not (acl_setting := category.get('acl_setting')):
+    def _can_access_mailing_list_folder(self, folder_name: str):
+        if not folder_name.startswith(RESTRICTED_FOLDER_PREFIX):
             return True
+        try:
+            acl_setting = RESTRICTED_FOLDER_ACL_MAP[folder_name.removeprefix(RESTRICTED_FOLDER_PREFIX)]
+        except KeyError:
+            current_plugin.logger.error('No ACL mapped for restricted folder %s', folder_name)
+            return False
         return current_plugin.settings.acls.contains_user(acl_setting, self.user)
 
-    def check_mailing_list_access(self, mailing_list):
-        category = self.get_mailing_list_category(mailing_list)[1]
-        if category and not self.can_access_mailing_list_category(category):
+    def check_mailing_list_access(self, mailing_list: GetListResponse):
+        folder = self.get_folder(mailing_list.folder_id)
+        if not self._can_access_mailing_list_folder(folder.name):
             raise Forbidden
 
     def get_accessible_list(self, list_id):
@@ -376,57 +375,55 @@ class BrevoAPIMixin:
         self.check_mailing_list_access(mailing_list)
         return mailing_list
 
-    def group_mailing_lists(self, mailing_lists, subscribed_list_ids):
-        groups = {
-            DEFAULT_MAILING_LIST_GROUP_KEY: {
-                'title': str(DEFAULT_MAILING_LIST_GROUP['title']),
-                'lists': [],
-            },
-        }
-        category_access = {}
-
+    def group_mailing_lists(
+        self,
+        mailing_lists: list[GetListsResponseListsItem],
+        folders: list[GetFolder],
+        subscribed_list_ids: set[int],
+    ):
+        folder_map = {f.id: f for f in folders}
+        groups = {}
         for mailing_list in mailing_lists:
-            category_key, category = self.get_mailing_list_category(mailing_list)
-            if category:
-                if category_key not in category_access:
-                    category_access[category_key] = self.can_access_mailing_list_category(category)
-                if not category_access[category_key]:
-                    continue
-                group = groups.setdefault(category_key, {
-                    'title': str(category['title']),
-                    'lists': [],
-                })
-            else:
-                group = groups[DEFAULT_MAILING_LIST_GROUP_KEY]
+            folder = folder_map[mailing_list.folder_id]
+            if not self._can_access_mailing_list_folder(folder.name):
+                continue
 
+            group = groups.setdefault(folder.id, {
+                'key': str(folder.id),
+                'title': folder.name.removeprefix(RESTRICTED_FOLDER_PREFIX),
+                'restricted': folder.name.startswith(RESTRICTED_FOLDER_PREFIX),
+                'lists': [],
+            })
             group['lists'].append({
                 'id': mailing_list.id,
                 'name': mailing_list.name,
                 'subscribed': mailing_list.id in subscribed_list_ids,
             })
 
-        return [{'key': key, **group} for key, group in groups.items() if group['lists']]
+        return sorted(groups.values(), key=lambda x: (['restricted'], x['title']))
 
 
 class RHMailingLists(BrevoAPIMixin, RHUserBase):
     def _process(self):
         subscribed_list_ids = set()
         emails = self.user.all_emails
-        lists = self.get_all_lists()
+        lists, folders = self.get_all_lists()
 
         for email in emails:
             if contact_info := self.get_contact_info(email):
                 subscribed_list_ids.update(contact_info.list_ids)
 
-        grouped_lists = self.group_mailing_lists(lists, subscribed_list_ids)
+        grouped_lists = self.group_mailing_lists(lists, folders, subscribed_list_ids)
         return WPUserMailingLists.render_template('mailing_lists.html', 'mailing_lists', user=self.user,
                                                   mailing_lists=grouped_lists, user_id=request.view_args.get('user_id'))
 
     def get_all_lists(self):
         try:
-            return self.brevo_client.contacts.get_lists().lists
+            folders = self.brevo_client.contacts.get_folders(limit=50).folders
+            lists = self.brevo_client.contacts.get_lists(limit=50).lists
         except ApiError:
             raise IndicoError('Could not get mailing lists')
+        return lists, folders
 
 
 class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
@@ -450,7 +447,10 @@ class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
                           f'Subscribed to list: {mailing_list.name}',
                           session.user, meta={'list_id': list_id})
             return '', 204
-        except ApiError:
+        except ApiError as exc:
+            if exc.body.get('code') == 'invalid_parameter':
+                # Likely "contact already in list" ie the user already subscribed
+                return '', 204
             raise IndicoError('Could not subscribe to mailing list')
 
     def add_contact_to_lists(self, list_id, contact_email):
@@ -471,5 +471,8 @@ class RHMailingListUnsubscribe(BrevoAPIMixin, RHUserBase):
                           f'Unsubscribed from list: {mailing_list.name}',
                           session.user, meta={'list_id': list_id})
             return '', 204
-        except ApiError:
+        except ApiError as exc:
+            if exc.body.get('code') == 'invalid_parameter':
+                # Likely "contact already removed" ie the user already unsubscribed
+                return '', 204
             raise IndicoError('Could not unsubscribe from mailing list')

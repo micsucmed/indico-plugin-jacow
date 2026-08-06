@@ -1,5 +1,9 @@
 {% extends 'users/base.html' %}
 
+{% block banner_title %}
+    {{ super() }} - {% trans %}Mailing Lists{% endtrans %}
+{% endblock %}
+
 {% block user_content %}
     {% if session.user.is_admin and user != session.user %}
         {% call message_box('warning') %}

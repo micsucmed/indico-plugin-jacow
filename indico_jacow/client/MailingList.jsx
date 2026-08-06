@@ -76,10 +76,13 @@ export function MailingList({mailingLists, userId}) {
 
   return (
     <div className="i-box-group vert" style={{marginTop: '15px'}}>
-      {listGroups.map(({key, title, lists: groupLists}) => (
+      {listGroups.map(({key, title, restricted, lists: groupLists}) => (
         <div className="i-box" key={key}>
           <div className="i-box-header">
-            <div className="i-box-title">{title}</div>
+            <div className="i-box-title">
+              {restricted && <i className="lock icon" title="These mailing lists are restricted"></i>}
+              {title}
+            </div>
           </div>
           <div className="i-box-content">
             <List divided relaxed size="big">
@@ -110,6 +113,7 @@ MailingList.propTypes = {
     PropTypes.shape({
       key: PropTypes.string.isRequired,
       title: PropTypes.string.isRequired,
+      restricted: PropTypes.bool.isRequired,
       lists: PropTypes.arrayOf(
         PropTypes.shape({
           id: PropTypes.number.isRequired,

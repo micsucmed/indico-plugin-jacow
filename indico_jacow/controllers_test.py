@@ -8,6 +8,7 @@
 from types import SimpleNamespace
 
 import pytest
+from brevo import GetFolder, GetListsResponseListsItem
 from flask import g
 from marshmallow import EXCLUDE
 from werkzeug.exceptions import Forbidden
@@ -74,6 +75,21 @@ def test_person_link_schema_post_dump_omits_core_affiliation_for_jacow_affiliati
         assert data[0]['jacow_affiliations_ids'] == [affiliation.id]
 
 
+@pytest.fixture
+def dummy_brevo_data():
+    crap = {'totalBlacklisted': 0, 'totalSubscribers': 0, 'uniqueSubscribers': 0}
+    lists = [
+        GetListsResponseListsItem(id=1, folder_id=1, name='Users', **crap),
+        GetListsResponseListsItem(id=2, folder_id=2, name='Board', **crap),
+        GetListsResponseListsItem(id=3, folder_id=1, name='Announcements', **crap),
+    ]
+    folders = [
+        GetFolder(id=1, name='Mailing Lists', **crap),
+        GetFolder(id=2, name='RESTRICTED_Stakeholder Lists', **crap),
+    ]
+    return lists, folders
+
+
 def _mock_stakeholder_acl(mocker, allowed):
     contains_user = mocker.Mock(return_value=allowed)
     mocker.patch('indico_jacow.controllers.current_plugin',
@@ -87,65 +103,70 @@ def _make_user(admin=False):
 @pytest.mark.parametrize(('acl_allowed', 'expected'), (
     (False, [
         {
-            'key': 'regular',
+            'key': '1',
             'title': 'Mailing Lists',
+            'restricted': False,
             'lists': [
                 {'id': 1, 'name': 'Users', 'subscribed': False},
-                {'id': 3, 'name': 'Announcements', 'subscribed': False},
+                {'id': 3, 'name': 'Announcements', 'subscribed': True},
             ],
         },
     ]),
     (True, [
         {
-            'key': 'regular',
+            'key': '1',
             'title': 'Mailing Lists',
+            'restricted': False,
             'lists': [
                 {'id': 1, 'name': 'Users', 'subscribed': False},
-                {'id': 3, 'name': 'Announcements', 'subscribed': False},
+                {'id': 3, 'name': 'Announcements', 'subscribed': True},
             ],
         },
         {
-            'key': 'stakeholder',
-            'title': 'Stakeholder Mailing Lists',
+            'key': '2',
+            'title': 'Stakeholder Lists',
+            'restricted': True,
             'lists': [
-                {'id': 2, 'name': 'Stakeholders_Board', 'subscribed': False},
+                {'id': 2, 'name': 'Board', 'subscribed': False},
             ],
         },
     ]),
 ))
-def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
+def test_mailing_lists_are_grouped_by_acl_access(mocker, dummy_brevo_data, acl_allowed, expected):
     from indico_jacow.controllers import BrevoAPIMixin
 
     _mock_stakeholder_acl(mocker, acl_allowed)
-    mailing_lists = [
-        SimpleNamespace(id=1, name='Users'),
-        SimpleNamespace(id=2, name='Stakeholders_Board'),
-        SimpleNamespace(id=3, name='Announcements'),
-    ]
-
+    lists, folders = dummy_brevo_data
     rh = BrevoAPIMixin()
     rh.user = _make_user()
-    assert rh.group_mailing_lists(mailing_lists, set()) == expected
+    assert rh.group_mailing_lists(lists, folders, {3}) == expected
 
 
 @pytest.mark.parametrize(('list_name', 'admin', 'acl_allowed', 'allowed'), (
-    ('Stakeholders_Board', False, False, False),
-    ('Stakeholders_Board', False, True, True),
-    ('Stakeholders_Board', True, False, False),
+    ('Board', False, False, False),
+    ('Board', False, True, True),
+    ('Board', True, False, False),
     ('Announcements', False, False, True),
 ))
-def test_mailing_list_access_checks_stakeholder_acl(mocker, list_name, admin, acl_allowed, allowed):
+def test_mailing_list_access_checks_stakeholder_acl(mocker, dummy_brevo_data, list_name, admin, acl_allowed, allowed):
     from indico_jacow.controllers import BrevoAPIMixin
 
     _mock_stakeholder_acl(mocker, acl_allowed)
+    lists, folders = dummy_brevo_data
+    folders = {f.id: f for f in folders}
+    mailing_list = next(x for x in lists if x.name == list_name)
 
-    rh = BrevoAPIMixin()
+    class MockBrevoAPIMixin(BrevoAPIMixin):
+        def get_folder(self, folder_id):
+            return folders[folder_id]
+
+    rh = MockBrevoAPIMixin()
     rh.user = _make_user(admin=admin)
     if allowed:
-        rh.check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
+        rh.check_mailing_list_access(mailing_list)
     else:
         with pytest.raises(Forbidden):
-            rh.check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
+            rh.check_mailing_list_access(mailing_list)
 
 
 @pytest.mark.parametrize(('reviews', 'expected'), (
