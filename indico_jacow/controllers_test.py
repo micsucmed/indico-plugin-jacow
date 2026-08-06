@@ -74,10 +74,6 @@ def test_person_link_schema_post_dump_omits_core_affiliation_for_jacow_affiliati
         assert data[0]['jacow_affiliations_ids'] == [affiliation.id]
 
 
-def _mock_session_user(mocker, user):
-    mocker.patch('indico_jacow.controllers.session', SimpleNamespace(user=user))
-
-
 def _mock_stakeholder_acl(mocker, allowed):
     contains_user = mocker.Mock(return_value=allowed)
     mocker.patch('indico_jacow.controllers.current_plugin',
@@ -120,8 +116,6 @@ def _make_user(admin=False):
 def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
     from indico_jacow.controllers import BrevoAPIMixin
 
-    user = _make_user()
-    _mock_session_user(mocker, user)
     _mock_stakeholder_acl(mocker, acl_allowed)
     mailing_lists = [
         SimpleNamespace(id=1, name='Users'),
@@ -129,7 +123,9 @@ def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
         SimpleNamespace(id=3, name='Announcements'),
     ]
 
-    assert BrevoAPIMixin().group_mailing_lists(mailing_lists, set()) == expected
+    rh = BrevoAPIMixin()
+    rh.user = _make_user()
+    assert rh.group_mailing_lists(mailing_lists, set()) == expected
 
 
 @pytest.mark.parametrize(('list_name', 'admin', 'acl_allowed', 'allowed'), (
@@ -141,14 +137,15 @@ def test_mailing_lists_are_grouped_by_acl_access(mocker, acl_allowed, expected):
 def test_mailing_list_access_checks_stakeholder_acl(mocker, list_name, admin, acl_allowed, allowed):
     from indico_jacow.controllers import BrevoAPIMixin
 
-    _mock_session_user(mocker, _make_user(admin=admin))
     _mock_stakeholder_acl(mocker, acl_allowed)
 
+    rh = BrevoAPIMixin()
+    rh.user = _make_user(admin=admin)
     if allowed:
-        BrevoAPIMixin().check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
+        rh.check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
     else:
         with pytest.raises(Forbidden):
-            BrevoAPIMixin().check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
+            rh.check_mailing_list_access(SimpleNamespace(id=2, name=list_name))
 
 
 @pytest.mark.parametrize(('reviews', 'expected'), (

@@ -364,9 +364,7 @@ class BrevoAPIMixin:
     def can_access_mailing_list_category(self, category):
         if not (acl_setting := category.get('acl_setting')):
             return True
-        if not session.user:
-            return False
-        return current_plugin.settings.acls.contains_user(acl_setting, session.user)
+        return current_plugin.settings.acls.contains_user(acl_setting, self.user)
 
     def check_mailing_list_access(self, mailing_list):
         category = self.get_mailing_list_category(mailing_list)[1]
