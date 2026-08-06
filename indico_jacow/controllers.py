@@ -51,6 +51,7 @@ from indico.web.rh import RH, RHProtected
 from indico_jacow.views import WPAbstractsStats, WPDisplayAbstractsStatistics, WPUserMailingLists
 
 
+HIDDEN_FOLDER_PREFIX = 'HIDDEN-'
 RESTRICTED_FOLDER_PREFIX = 'RESTRICTED-'
 RESTRICTED_FOLDER_ACL_MAP = {
     'Stakeholders Lists': 'stakeholder_mailing_list_access',
@@ -356,6 +357,8 @@ class BrevoAPIMixin:
             raise IndicoError('Could not get mailing list folder')
 
     def _can_access_mailing_list_folder(self, folder_name: str):
+        if folder_name.startswith(HIDDEN_FOLDER_PREFIX):
+            return False
         if not folder_name.startswith(RESTRICTED_FOLDER_PREFIX):
             return True
         try:
