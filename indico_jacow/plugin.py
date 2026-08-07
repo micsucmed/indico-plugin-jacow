@@ -62,7 +62,6 @@ class SettingsForm(IndicoForm):
     _fieldsets = [
         (_('General'), ('sync_enabled', 'brevo_api_key')),
         (_('User profile management'), ('repo_managers',)),
-        (_('Mailing lists'), ('stakeholder_mailing_list_access',)),
     ]
 
     sync_enabled = BooleanField(_('Sync profiles'), widget=SwitchWidget(),
@@ -71,9 +70,6 @@ class SettingsForm(IndicoForm):
                                        description=_('List of users who can manage Indico user profiles without being '
                                                      'full Indico admins'))
     brevo_api_key = IndicoPasswordField(_('Brevo API key'), toggle=True)
-    stakeholder_mailing_list_access = PrincipalListField(_('Stakeholder mailing list access'), allow_groups=True,
-                                                         description=_('Users/groups allowed to see and manage '
-                                                                       'stakeholder mailing list subscriptions'))
 
 
 class JACOWPlugin(IndicoPlugin):

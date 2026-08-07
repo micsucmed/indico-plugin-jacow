@@ -11,7 +11,7 @@ import mailingListUnsubscribeURL from 'indico-url:plugin_jacow.user_mailing_list
 import PropTypes from 'prop-types';
 import React, {useState} from 'react';
 import ReactDOM from 'react-dom';
-import {ListItem, ListContent, List, Checkbox} from 'semantic-ui-react';
+import {ListItem, ListContent, List, Checkbox, Message, Icon} from 'semantic-ui-react';
 
 import {indicoAxios, handleAxiosError} from 'indico/utils/axios';
 
@@ -76,15 +76,35 @@ export function MailingList({mailingLists, userId}) {
 
   return (
     <div className="i-box-group vert" style={{marginTop: '15px'}}>
-      {listGroups.map(({key, title, restricted, lists: groupLists}) => (
+      {listGroups.map(({key, title, restricted, has_access: hasAccess, lists: groupLists}) => (
         <div className="i-box" key={key}>
           <div className="i-box-header">
             <div className="i-box-title">
-              {restricted && <i className="lock icon" title="These mailing lists are restricted"></i>}
+              {restricted && (
+                <i className="lock icon" title="These mailing lists are restricted"></i>
+              )}
               {title}
             </div>
           </div>
           <div className="i-box-content">
+            {restricted && (
+              <div className="highlight-message-box">
+                <div className="message-box-content">
+                  <div className="message-text">
+                    The lists in this folder are restricted.
+                    <br />
+                    {hasAccess ? (
+                      <>
+                        As an Indico admin (or JACoW repository manager) you can manage the
+                        subscription anyway.
+                      </>
+                    ) : (
+                      <>Your subscription to these lists cannot be managed via Indico.</>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             <List divided relaxed size="big">
               {groupLists.map(list => (
                 <ListItem styleName="mailing" key={list.id}>
@@ -94,7 +114,7 @@ export function MailingList({mailingLists, userId}) {
                       toggle
                       value={list.id}
                       onChange={handleToggle}
-                      disabled={listsLoadingRequests.has(list.id)}
+                      disabled={listsLoadingRequests.has(list.id) || !hasAccess}
                       checked={list.subscribed}
                     />
                   </ListContent>
@@ -114,6 +134,7 @@ MailingList.propTypes = {
       key: PropTypes.string.isRequired,
       title: PropTypes.string.isRequired,
       restricted: PropTypes.bool.isRequired,
+      has_access: PropTypes.bool.isRequired,
       lists: PropTypes.arrayOf(
         PropTypes.shape({
           id: PropTypes.number.isRequired,
@@ -133,10 +154,7 @@ customElements.define(
       const userId = JSON.parse(this.getAttribute('user-id'));
       const lists = JSON.parse(this.getAttribute('lists'));
 
-      ReactDOM.render(
-        <MailingList mailingLists={lists} userId={userId} />,
-        this
-      );
+      ReactDOM.render(<MailingList mailingLists={lists} userId={userId} />, this);
     }
   }
 );

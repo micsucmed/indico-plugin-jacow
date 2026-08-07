@@ -8,6 +8,7 @@
 import csv
 import io
 from collections import defaultdict
+from operator import itemgetter
 from statistics import mean, pstdev
 
 from brevo import (AddContactToListRequestBodyEmails, Brevo, GetFolder, GetListResponse, GetListsResponseListsItem,
@@ -53,9 +54,6 @@ from indico_jacow.views import WPAbstractsStats, WPDisplayAbstractsStatistics, W
 
 HIDDEN_FOLDER_PREFIX = 'HIDDEN-'
 RESTRICTED_FOLDER_PREFIX = 'RESTRICTED-'
-RESTRICTED_FOLDER_ACL_MAP = {
-    'Stakeholders Lists': 'stakeholder_mailing_list_access',
-}
 
 
 def _get_boolean_questions(event):
@@ -361,12 +359,7 @@ class BrevoAPIMixin:
             return False
         if not folder_name.startswith(RESTRICTED_FOLDER_PREFIX):
             return True
-        try:
-            acl_setting = RESTRICTED_FOLDER_ACL_MAP[folder_name.removeprefix(RESTRICTED_FOLDER_PREFIX)]
-        except KeyError:
-            current_plugin.logger.error('No ACL mapped for restricted folder %s', folder_name)
-            return False
-        return current_plugin.settings.acls.contains_user(acl_setting, self.user)
+        return session.user.is_admin or current_plugin.settings.acls.contains_user('repo_managers', session.user)
 
     def check_mailing_list_access(self, mailing_list: GetListResponse):
         folder = self.get_folder(mailing_list.folder_id)
@@ -387,23 +380,27 @@ class BrevoAPIMixin:
         folder_map = {f.id: f for f in folders}
         groups = {}
         for mailing_list in mailing_lists:
+            subscribed = mailing_list.id in subscribed_list_ids
             folder = folder_map[mailing_list.folder_id]
-            if not self._can_access_mailing_list_folder(folder.name):
+            has_access = self._can_access_mailing_list_folder(folder.name)
+
+            if not subscribed and not has_access:
                 continue
 
             group = groups.setdefault(folder.id, {
                 'key': str(folder.id),
                 'title': folder.name.removeprefix(RESTRICTED_FOLDER_PREFIX),
                 'restricted': folder.name.startswith(RESTRICTED_FOLDER_PREFIX),
+                'has_access': has_access,
                 'lists': [],
             })
             group['lists'].append({
                 'id': mailing_list.id,
                 'name': mailing_list.name,
-                'subscribed': mailing_list.id in subscribed_list_ids,
+                'subscribed': subscribed,
             })
 
-        return sorted(groups.values(), key=lambda x: (['restricted'], x['title']))
+        return sorted(groups.values(), key=itemgetter('restricted', 'title'))
 
 
 class RHMailingLists(BrevoAPIMixin, RHUserBase):
