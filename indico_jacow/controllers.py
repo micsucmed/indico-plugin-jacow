@@ -322,7 +322,15 @@ class RHCreateAffiliation(RHProtected):
         return AffiliationSchema().jsonify(aff)
 
 
-class BrevoAPIMixin:
+class RHUserMailingListsBase(RHUserBase):
+    def _check_access(self):
+        RHProtected._check_access(self)
+        if (
+            not self.user.can_be_modified(session.user) and
+            not current_plugin.settings.acls.contains_user('repo_managers', session.user)
+        ):
+            raise Forbidden('You cannot modify this user.')
+
     @cached_property
     def brevo_client(self):
         return Brevo(api_key=current_plugin.settings.get('brevo_api_key'))
@@ -403,7 +411,7 @@ class BrevoAPIMixin:
         return sorted(groups.values(), key=itemgetter('restricted', 'title'))
 
 
-class RHMailingLists(BrevoAPIMixin, RHUserBase):
+class RHMailingLists(RHUserMailingListsBase):
     def _process(self):
         subscribed_list_ids = set()
         emails = self.user.all_emails
@@ -426,7 +434,7 @@ class RHMailingLists(BrevoAPIMixin, RHUserBase):
         return lists, folders
 
 
-class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
+class RHMailingListSubscribe(RHUserMailingListsBase):
     @use_kwargs({
         'list_id': fields.Int(required=True, validate=not_empty),
     })
@@ -458,7 +466,7 @@ class RHMailingListSubscribe(BrevoAPIMixin, RHUserBase):
         return self.brevo_client.contacts.add_contact_to_list(list_id, request=payload)
 
 
-class RHMailingListUnsubscribe(BrevoAPIMixin, RHUserBase):
+class RHMailingListUnsubscribe(RHUserMailingListsBase):
     @use_kwargs({
         'list_id': fields.Int(required=True, validate=not_empty),
     })
