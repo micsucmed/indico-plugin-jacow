@@ -408,6 +408,8 @@ class RHUserMailingListsBase(RHUserBase):
                 'subscribed': subscribed,
             })
 
+        for group in groups.values():
+            group['lists'].sort(key=itemgetter('name'))
         return sorted(groups.values(), key=itemgetter('restricted', 'title'))
 
 

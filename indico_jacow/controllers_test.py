@@ -105,8 +105,8 @@ def dummy_brevo_data():
             'restricted': False,
             'has_access': True,
             'lists': [
-                {'id': 1, 'name': 'Users', 'subscribed': False},
                 {'id': 3, 'name': 'Announcements', 'subscribed': True},
+                {'id': 1, 'name': 'Users', 'subscribed': False},
             ],
         },
     ]),
@@ -117,8 +117,8 @@ def dummy_brevo_data():
             'restricted': False,
             'has_access': True,
             'lists': [
-                {'id': 1, 'name': 'Users', 'subscribed': False},
                 {'id': 3, 'name': 'Announcements', 'subscribed': True},
+                {'id': 1, 'name': 'Users', 'subscribed': False},
             ],
         },
         {
@@ -138,8 +138,8 @@ def dummy_brevo_data():
             'restricted': False,
             'has_access': True,
             'lists': [
-                {'id': 1, 'name': 'Users', 'subscribed': False},
                 {'id': 3, 'name': 'Announcements', 'subscribed': True},
+                {'id': 1, 'name': 'Users', 'subscribed': False},
             ],
         },
         {
