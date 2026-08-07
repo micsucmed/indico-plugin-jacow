@@ -333,7 +333,7 @@ class RHUserMailingListsBase(RHUserBase):
 
     @cached_property
     def brevo_client(self):
-        return Brevo(api_key=current_plugin.settings.get('brevo_api_key'))
+        return Brevo(api_key=current_plugin.settings.get('brevo_api_key'), timeout=5)
 
     def get_contact_info(self, email):
         try:
@@ -427,8 +427,12 @@ class RHMailingLists(RHUserMailingListsBase):
 
     def get_all_lists(self):
         try:
-            folders = self.brevo_client.contacts.get_folders(limit=50).folders
-            lists = self.brevo_client.contacts.get_lists(limit=50).lists
+            folders = []
+            lists = []
+            while chunk := self.brevo_client.contacts.get_folders(offset=len(folders), limit=50).folders:
+                folders.extend(chunk)
+            while chunk := self.brevo_client.contacts.get_lists(offset=len(lists), limit=50).lists:
+                lists.extend(chunk)
         except ApiError:
             raise IndicoError('Could not get mailing lists')
         return lists, folders
