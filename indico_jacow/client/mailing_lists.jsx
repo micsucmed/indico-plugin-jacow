@@ -10,7 +10,7 @@ import mailingListSubscriptionURL from 'indico-url:plugin_jacow.user_mailing_lis
 import PropTypes from 'prop-types';
 import React, {useState} from 'react';
 import ReactDOM from 'react-dom';
-import {ListItem, ListContent, List, Checkbox, Message, Icon} from 'semantic-ui-react';
+import {ListItem, ListContent, List, Checkbox} from 'semantic-ui-react';
 
 import {indicoAxios, handleAxiosError} from 'indico/utils/axios';
 
@@ -32,7 +32,9 @@ function MailingLists({mailingLists, userId}) {
   };
 
   const handleToggle = async (ev, {value}) => {
-    if (listsLoadingRequests.has(value)) return;
+    if (listsLoadingRequests.has(value)) {
+      return;
+    }
 
     setListsLoadingRequests(prev => new Set(prev).add(value));
 
@@ -79,9 +81,7 @@ function MailingLists({mailingLists, userId}) {
         <div className="i-box" key={key}>
           <div className="i-box-header">
             <div className="i-box-title">
-              {restricted && (
-                <i className="lock icon" title="These mailing lists are restricted"></i>
-              )}
+              {restricted && <i className="lock icon" title="These mailing lists are restricted" />}
               {title}
             </div>
           </div>
