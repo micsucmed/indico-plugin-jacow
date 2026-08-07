@@ -5,8 +5,7 @@
 // them and/or modify them under the terms of the MIT License; see
 // the LICENSE file for more details.
 
-import mailingListSubscribeURL from 'indico-url:plugin_jacow.user_mailing_lists_subscribe';
-import mailingListUnsubscribeURL from 'indico-url:plugin_jacow.user_mailing_lists_unsubscribe';
+import mailingListSubscriptionURL from 'indico-url:plugin_jacow.user_mailing_lists_subscription';
 
 import PropTypes from 'prop-types';
 import React, {useState} from 'react';
@@ -24,12 +23,12 @@ function MailingLists({mailingLists, userId}) {
   const lists = listGroups.flatMap(group => group.lists);
   const userIdArgs = userId !== null ? {user_id: userId} : {};
 
-  const subscribeList = async list => {
-    await indicoAxios.post(mailingListSubscribeURL(userIdArgs), list);
+  const subscribeList = async listId => {
+    await indicoAxios.put(mailingListSubscriptionURL({...userIdArgs, list_id: listId}));
   };
 
-  const unsubscribeList = async list => {
-    await indicoAxios.post(mailingListUnsubscribeURL(userIdArgs), list);
+  const unsubscribeList = async listId => {
+    await indicoAxios.delete(mailingListSubscriptionURL({...userIdArgs, list_id: listId}));
   };
 
   const handleToggle = async (ev, {value}) => {
@@ -51,9 +50,9 @@ function MailingLists({mailingLists, userId}) {
 
     try {
       if (newSubscriptionStatus) {
-        await subscribeList({list_id: value});
+        await subscribeList(value);
       } else {
-        await unsubscribeList({list_id: value});
+        await unsubscribeList(value);
       }
     } catch (e) {
       handleAxiosError(e);

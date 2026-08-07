@@ -343,13 +343,6 @@ class RHUserMailingListsBase(RHUserBase):
         except ApiError:
             raise IndicoError('Could not get contact info')
 
-    def create_contact(self, email, first_name, last_name, list_ids):
-        self.brevo_client.contacts.create_contact(
-            email=email,
-            attributes={'FIRSTNAME': first_name, 'LASTNAME': last_name},
-            list_ids=list_ids,
-        )
-
     def get_list(self, list_id):
         try:
             return self.brevo_client.contacts.get_list(list_id)
@@ -440,53 +433,45 @@ class RHMailingLists(RHUserMailingListsBase):
         return lists, folders
 
 
-class RHMailingListSubscribe(RHUserMailingListsBase):
-    @use_kwargs({
-        'list_id': fields.Int(required=True, validate=not_empty),
-    })
-    def _process(self, list_id):
+class RHMailingListSubscription(RHUserMailingListsBase):
+    def _process_PUT(self):
+        list_id = request.view_args['list_id']
         email = self.user.email
         mailing_list = self.get_accessible_list(list_id)
         try:
             if self.get_contact_info(email):
-                self.add_contact_to_lists(list_id, email)
+                payload = AddContactToListRequestBodyEmails(emails=[email])
+                self.brevo_client.contacts.add_contact_to_list(list_id, request=payload)
             else:
-                self.create_contact(
+                self.brevo_client.contacts.create_contact(
                     email=email,
-                    first_name=self.user.first_name,
-                    last_name=self.user.last_name,
+                    attributes={'FIRSTNAME': self.user.first_name, 'LASTNAME': self.user.last_name},
                     list_ids=[list_id],
                 )
-            self.user.log(UserLogRealm.user, LogKind.positive, 'Mailing Lists',
-                          f'Subscribed to list: {mailing_list.name}',
-                          session.user, meta={'list_id': list_id})
-            return '', 204
         except ApiError as exc:
             if exc.body.get('code') == 'invalid_parameter':
                 # Likely "contact already in list" ie the user already subscribed
                 return '', 204
             raise IndicoError('Could not subscribe to mailing list')
 
-    def add_contact_to_lists(self, list_id, contact_email):
-        payload = AddContactToListRequestBodyEmails(emails=[contact_email])
-        return self.brevo_client.contacts.add_contact_to_list(list_id, request=payload)
+        self.user.log(UserLogRealm.user, LogKind.positive, 'Mailing Lists',
+                      f'Subscribed to list: {mailing_list.name}',
+                      session.user, meta={'list_id': list_id})
+        return '', 204
 
-
-class RHMailingListUnsubscribe(RHUserMailingListsBase):
-    @use_kwargs({
-        'list_id': fields.Int(required=True, validate=not_empty),
-    })
-    def _process(self, list_id):
+    def _process_DELETE(self):
+        list_id = request.view_args['list_id']
         mailing_list = self.get_accessible_list(list_id)
         payload = RemoveContactFromListRequestBodyEmails(emails=list(self.user.all_emails))
         try:
             self.brevo_client.contacts.remove_contact_from_list(list_id, request=payload)
-            self.user.log(UserLogRealm.user, LogKind.negative, 'Mailing Lists',
-                          f'Unsubscribed from list: {mailing_list.name}',
-                          session.user, meta={'list_id': list_id})
-            return '', 204
         except ApiError as exc:
             if exc.body.get('code') == 'invalid_parameter':
                 # Likely "contact already removed" ie the user already unsubscribed
                 return '', 204
             raise IndicoError('Could not unsubscribe from mailing list')
+
+        self.user.log(UserLogRealm.user, LogKind.negative, 'Mailing Lists',
+                      f'Unsubscribed from list: {mailing_list.name}',
+                      session.user, meta={'list_id': list_id})
+        return '', 204

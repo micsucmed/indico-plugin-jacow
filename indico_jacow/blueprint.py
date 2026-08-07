@@ -12,7 +12,7 @@ from indico.core.plugins import IndicoPluginBlueprint
 from indico_jacow.controllers import (RHAbstractsExportCSV, RHAbstractsExportExcel, RHAbstractsStats,
                                       RHContributionsExportCSV, RHContributionsExportExcel, RHCountries,
                                       RHCreateAffiliation, RHDisplayAbstractsStatistics, RHMailingLists,
-                                      RHMailingListSubscribe, RHMailingListUnsubscribe, RHPeerReviewCSVImport)
+                                      RHMailingListSubscription, RHPeerReviewCSVImport)
 
 
 blueprint = IndicoPluginBlueprint('jacow', __name__, url_prefix='/event/<int:event_id>')
@@ -43,10 +43,8 @@ blueprint.add_url_rule('!/api/jacow/affiliation', 'create_affiliation', RHCreate
 # Mailing lists
 with blueprint.add_prefixed_rules('!/user/<int:user_id>', '!/user'):
     blueprint.add_url_rule('/mailing-lists/', 'user_mailing_lists', RHMailingLists)
-    blueprint.add_url_rule('/mailing-lists/subscribe', 'user_mailing_lists_subscribe',
-                           RHMailingListSubscribe, methods=('POST',))
-    blueprint.add_url_rule('/mailing-lists/unsubscribe', 'user_mailing_lists_unsubscribe',
-                           RHMailingListUnsubscribe, methods=('POST',))
+    blueprint.add_url_rule('/mailing-lists/subscriptions/<int:list_id>', 'user_mailing_lists_subscription',
+                           RHMailingListSubscription, methods=('PUT', 'DELETE'))
 
 
 @blueprint.url_defaults
