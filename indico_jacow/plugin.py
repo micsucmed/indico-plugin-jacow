@@ -86,7 +86,6 @@ class JACOWPlugin(IndicoPlugin):
     }
     acl_settings = {
         'repo_managers',
-        'stakeholder_mailing_list_access',
     }
     default_event_settings = {
         'multiple_affiliations': False,
