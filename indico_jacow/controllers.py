@@ -392,7 +392,7 @@ class RHUserMailingListsBase(RHUserBase):
             folder = folder_map[mailing_list.folder_id]
             has_access = self._can_access_mailing_list_folder(folder.name)
 
-            if not subscribed and not has_access:
+            if (not subscribed or folder.name.startswith(HIDDEN_FOLDER_PREFIX)) and not has_access:
                 continue
 
             group = groups.setdefault(folder.id, {
