@@ -15,9 +15,9 @@ import {ListItem, ListContent, List, Checkbox, Message, Icon} from 'semantic-ui-
 
 import {indicoAxios, handleAxiosError} from 'indico/utils/axios';
 
-import './MailingList.module.scss';
+import './mailing_lists.module.scss';
 
-export function MailingList({mailingLists, userId}) {
+function MailingLists({mailingLists, userId}) {
   const [listGroups, setListGroups] = useState(mailingLists);
   const [listsLoadingRequests, setListsLoadingRequests] = useState(new Set());
 
@@ -128,7 +128,7 @@ export function MailingList({mailingLists, userId}) {
   );
 }
 
-MailingList.propTypes = {
+MailingLists.propTypes = {
   mailingLists: PropTypes.arrayOf(
     PropTypes.shape({
       key: PropTypes.string.isRequired,
@@ -154,7 +154,7 @@ customElements.define(
       const userId = JSON.parse(this.getAttribute('user-id'));
       const lists = JSON.parse(this.getAttribute('lists'));
 
-      ReactDOM.render(<MailingList mailingLists={lists} userId={userId} />, this);
+      ReactDOM.render(<MailingLists mailingLists={lists} userId={userId} />, this);
     }
   }
 );

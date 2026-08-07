@@ -7,13 +7,13 @@
 
 import {registerPluginComponent, registerPluginObject} from 'indico/utils/plugins';
 
-import {MailingList} from './MailingList';
 import MultipleAffiliationsSelector, {
   MultipleAffiliationsButton,
   customFields,
   onAddPersonLink,
 } from './MultipleAffiliationsSelector';
 import {PeerReviewManagersFileButton} from './PeerReviewManagersFileInput';
+import './mailing_lists';
 
 const PLUGIN_NAME = 'jacow';
 
